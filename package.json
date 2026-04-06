@@ -76,3 +76,4 @@ async function startBot() {
 }
 
 startBot()
+"qrcode-terminal": "^0.12.0"
