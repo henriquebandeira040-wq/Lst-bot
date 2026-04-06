@@ -1,0 +1,69 @@
+import makeWASocket, { useMultiFileAuthState } from '@whiskeysockets/baileys'
+import P from 'pino'
+
+const avisos = {}
+
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth')
+
+    const sock = makeWASocket({
+        logger: P({ level: 'silent' }),
+        auth: state
+    })
+
+    sock.ev.on('creds.update', saveCreds)
+
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        const msg = messages[0]
+        if (!msg.message) return
+
+        const from = msg.key.remoteJid
+        const isGroup = from.endsWith('@g.us')
+
+        const body =
+            msg.message.conversation ||
+            msg.message.extendedTextMessage?.text
+
+        if (!body) return
+
+        if (body.startsWith('!ban') && isGroup) {
+            const mentioned = msg.message.extendedTextMessage?.contextInfo?.mentionedJid
+            if (!mentioned) return
+
+            await sock.groupParticipantsUpdate(from, mentioned, "remove")
+        }
+
+        if (body.startsWith('!aviso') && isGroup) {
+            const mentioned = msg.message.extendedTextMessage?.contextInfo?.mentionedJid
+            if (!mentioned) return
+
+            const user = mentioned[0]
+
+            if (!avisos[user]) avisos[user] = 0
+            avisos[user]++
+
+            await sock.sendMessage(from, {
+                text: `⚠️ @${user.split('@')[0]}: ${avisos[user]}/3`,
+                mentions: [user]
+            })
+
+            if (avisos[user] >= 3) {
+                await sock.groupParticipantsUpdate(from, [user], "remove")
+            }
+        }
+
+        if (body === '!lista') {
+            let texto = '📋 Avisos:\n'
+            for (let user in avisos) {
+                texto += `@${user.split('@')[0]}: ${avisos[user]}\n`
+            }
+
+            await sock.sendMessage(from, {
+                text: texto,
+                mentions: Object.keys(avisos)
+            })
+        }
+    })
+}
+
+startBot()
